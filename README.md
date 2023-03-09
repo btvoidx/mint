@@ -28,8 +28,8 @@ for event := range ch {
 // ...
 
 // In some other place
-e.Emit(e, MyEvent{Msg: "Hi", FromID: 1})
-e.Emit(e, MyEvent{Msg: "Hello indeed", FromID: 2})
+mint.Emit(e, MyEvent{Msg: "Hi", FromID: 1})
+mint.Emit(e, MyEvent{Msg: "Hello indeed", FromID: 2})
 ```
 
 If you want more control, you can jam into emitting process like so:
