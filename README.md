@@ -14,22 +14,22 @@ go get github.com/btvoidx/mint
 
 ### Use
 ```go
-	// Create an emitter
-	e := new(mint.Emitter) // or &mint.Emmiter{}
+// Create an emitter
+e := new(mint.Emitter) // or &mint.Emmiter{}
 
-	// Subscribe to MyEvent
-	ch, off := mint.On[MyEvent](e)
-	defer off() // don't forget to unsubsribe after!
+// Subscribe to MyEvent
+ch, off := mint.On[MyEvent](e)
+defer off() // don't forget to unsubsribe after!
 
-	for event := range ch {
-		// do something with event!
-	}
+for event := range ch {
+	// do something with event!
+}
 
-	// ...
+// ...
 
-	// In some other place
-	e.Emit(e, MyEvent{Msg: "Hi", FromID: 1})
-	e.Emit(e, MyEvent{Msg: "Hello indeed", FromID: 2})
+// In some other place
+e.Emit(e, MyEvent{Msg: "Hi", FromID: 1})
+e.Emit(e, MyEvent{Msg: "Hello indeed", FromID: 2})
 ```
 
 If you want more control, you can jam into emitting process like so:
