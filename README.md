@@ -9,7 +9,7 @@
 
 ### Install
 ```sh
-	go get github.com/btvoidx/mint
+go get github.com/btvoidx/mint
 ```
 
 ### Use
