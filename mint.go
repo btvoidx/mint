@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+// Emitter holds all active consumers and Emit hooks.
+//
 // Zero value is ready to use.
 type Emitter struct {
 	mu   sync.RWMutex
@@ -19,18 +21,14 @@ type Emitter struct {
 func (e *Emitter) init() {
 	e.once.Do(func() {
 		e.subs = make(map[uint64]any)
-		// e.before = make([]func(*Emitter, any) bool, 0)
-		// e.after = make([]func(*Emitter, any), 0)
 	})
 }
 
-// Sends v to all registered channels/functions. They receive it asyncronously.
-// Blocks until all listeners receive the value.
+// Pushes v to all consumers. They do not block each other, but block Emit.
+//
+// Sequentially calls BeforeEmit before pushing the value to consumers,
+// and AfterEmit after all consumers received the value.
 func Emit[T any](e *Emitter, v T) {
-	if len(e.subs) == 0 {
-		return
-	}
-
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
@@ -54,8 +52,8 @@ func Emit[T any](e *Emitter, v T) {
 	}
 }
 
-// Registers a new receiver. Channel receives all emitted values which implement T.
-// Such if T is any, ch will receive any emitted value.
+// Registers a new consumer. ch receives all values which implement T.
+// So if T is any, ch will receive any emitted value.
 //
 // Calling off closes ch.
 func On[T any](e *Emitter) (ch <-chan T, off func()) {
@@ -77,9 +75,9 @@ func On[T any](e *Emitter) (ch <-chan T, off func()) {
 	}
 }
 
-// Registers a new receiver and sends all values to fn.
+// Registers a new consumer and sends all values to fn.
 // It is called with all emitted values which implement T.
-// Such if T is any, fn will be called with any emitted value.
+// So if T is any, ch will receive any emitted value.
 //
 // Calling off unsubscribes fn from receiving new values.
 func OnFn[T any](e *Emitter, fn func(v T)) (off func()) {
@@ -101,7 +99,10 @@ func OnFn[T any](e *Emitter, fn func(v T)) (off func()) {
 //	interface{ AfterEmit(v any) }
 //
 // If it does not or is nil, an error is returned.
-// Handler methods are called sequentially and receive *T, not T.
+// Handler methods are called sequentially in order they were registered.
+//
+// BeforeEmit receives pointer to value, not value itself, so you can modify it before
+// it gets pushed to consumers.
 func Use(e *Emitter, h interface{}) error {
 	if h == nil {
 		return errors.New("h is nil")
