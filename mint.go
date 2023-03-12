@@ -58,7 +58,7 @@ func Emit[T any](e *Emitter, v T) {
 // Registers a new consumer. ch receives all values which implement T.
 // So if T is any, ch will receive any emitted value.
 //
-// Calling off closes ch.
+// Calling off closes ch. Calling off multiple times is a no-op.
 func On[T any](e *Emitter) (ch <-chan T, off func()) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
