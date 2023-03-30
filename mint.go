@@ -30,10 +30,9 @@ func (e *Emitter) init() {
 // and AfterEmit after all consumers received the value.
 func Emit[T any](e *Emitter, v T) {
 	e.mu.RLock()
-	defer e.mu.RUnlock()
-
 	for _, h := range e.before {
 		if h(&v) {
+			e.mu.RUnlock()
 			return
 		}
 	}
@@ -45,17 +44,21 @@ func Emit[T any](e *Emitter, v T) {
 			go func() { ch <- v; wg.Done() }()
 		}
 	}
+	e.mu.RUnlock()
+
 	wg.Wait()
 
+	e.mu.RLock()
 	for _, h := range e.after {
 		h(&v)
 	}
+	e.mu.RUnlock()
 }
 
 // Registers a new consumer. ch receives all values which implement T.
 // So if T is any, ch will receive any emitted value.
 //
-// Calling off closes ch.
+// Calling off closes ch. Calling off multiple times is a no-op.
 func On[T any](e *Emitter) (ch <-chan T, off func()) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -67,11 +70,24 @@ func On[T any](e *Emitter) (ch <-chan T, off func()) {
 	e.kc += 1
 	e.subs[k] = any(chn)
 
+	once := sync.Once{}
 	return chn, func() {
-		e.mu.Lock()
-		defer e.mu.Unlock()
-		delete(e.subs, k)
-		close(chn)
+		once.Do(func() {
+			e.mu.Lock()
+			defer e.mu.Unlock()
+			delete(e.subs, k)
+
+			// drain channel
+			// so pending emits don't panic
+			for {
+				select {
+				case <-chn:
+				default:
+					close(chn)
+					return
+				}
+			}
+		})
 	}
 }
 

@@ -61,6 +61,24 @@ func TestOnFn(t *testing.T) {
 	}
 }
 
+func TestOff(t *testing.T) {
+	e := new(mint.Emitter)
+
+	ch, off := mint.On[event](e)
+	event := event{"hello", "world"}
+
+	go mint.Emit(e, event)
+	go mint.Emit(e, event)
+	go mint.Emit(e, event)
+	go mint.Emit(e, event)
+	go mint.Emit(e, event)
+
+	<-ch
+	off()
+
+	mint.Emit(e, event)
+}
+
 func TestUse(t *testing.T) {
 	e := new(mint.Emitter)
 
