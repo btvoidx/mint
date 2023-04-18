@@ -3,17 +3,23 @@ package mint
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 // Emitter holds all active consumers and Emit hooks.
 //
 // Zero value is ready to use.
 type Emitter struct {
+	// If true, all emits will run sequentially on the same thread
+	// Emit was called on. While single-thread emit is running,
+	// multi-threaded emits will block.
+	SingleThread bool
+
 	mu   sync.RWMutex
 	once sync.Once
-	kc   uint64
+	idc  atomic.Uint64
 
-	subs   map[uint64]any
+	subs   map[uint64]any // func(T)
 	before []func(any) bool
 	after  []func(any)
 }
@@ -24,69 +30,94 @@ func (e *Emitter) init() {
 	})
 }
 
-// Pushes v to all consumers. They do not block each other, but block Emit.
+// Pushes v to all consumers.
 //
 // Sequentially calls BeforeEmit before pushing the value to consumers,
 // and AfterEmit after all consumers received the value.
 func Emit[T any](e *Emitter, v T) {
 	e.mu.RLock()
-	for _, h := range e.before {
-		if h(&v) {
-			e.mu.RUnlock()
-			return
+	fns := make([]func(T), 0, len(e.subs))
+	for _, fn := range e.subs {
+		if fn, ok := fn.(func(T)); ok {
+			fns = append(fns, fn)
 		}
 	}
+	e.mu.RUnlock()
 
-	wg := new(sync.WaitGroup)
-	for _, ch := range e.subs {
-		if ch, ok := ch.(chan T); ok {
+	if e.SingleThread {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+
+		for _, h := range e.before {
+			if h(&v) {
+				return
+			}
+		}
+
+		for _, fn := range fns {
+			fn(v)
+		}
+
+		for _, h := range e.after {
+			h(&v)
+		}
+	} else {
+		e.mu.RLock()
+		defer e.mu.RUnlock()
+
+		for _, h := range e.before {
+			if h(&v) {
+				return
+			}
+		}
+
+		wg := new(sync.WaitGroup)
+
+		for _, fn := range fns {
 			wg.Add(1)
-			go func() { ch <- v; wg.Done() }()
+			fn := fn
+			go func() { fn(v); wg.Done() }()
+		}
+
+		e.mu.RUnlock()
+		wg.Wait()
+		e.mu.RLock()
+
+		for _, h := range e.after {
+			h(&v)
 		}
 	}
-	e.mu.RUnlock()
-
-	wg.Wait()
-
-	e.mu.RLock()
-	for _, h := range e.after {
-		h(&v)
-	}
-	e.mu.RUnlock()
 }
 
-// Registers a new consumer. ch receives all values which implement T.
-// So if T is any, ch will receive any emitted value.
+// Registers a new consumer. fn is called with all values which implement T.
+// So if T is any, fn will receive any emitted value.
 //
-// Calling off closes ch. Calling off multiple times is a no-op.
-func On[T any](e *Emitter) (ch <-chan T, off func()) {
+// Calling off stops consumer. Multiple calls are no-op.
+func On[T any](e *Emitter, fn func(T)) (off func()) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	k := e.kc
-	chn := make(chan T)
-
 	e.init()
-	e.kc += 1
-	e.subs[k] = any(chn)
+	key := e.idc.Add(1)
+	e.subs[key] = fn
 
-	once := sync.Once{}
-	return chn, func() {
+	var once sync.Once
+	return func() {
 		once.Do(func() {
-			e.mu.Lock()
-			defer e.mu.Unlock()
-			delete(e.subs, k)
-
-			// drain channel
-			// so pending emits don't panic
-			for {
-				select {
-				case <-chn:
-				default:
-					close(chn)
-					return
-				}
+			// try deleting on the same thread
+			if e.mu.TryLock() {
+				defer e.mu.Unlock()
+				delete(e.subs, key)
+				return
 			}
+
+			// otherwise put into goroutine to avoid dead-lock
+			// which happens if off() is called by consumer
+			go func() {
+				e.mu.Lock()
+				defer e.mu.Unlock()
+				delete(e.subs, key)
+			}()
 		})
 	}
 }
