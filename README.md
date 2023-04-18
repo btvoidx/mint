@@ -1,7 +1,7 @@
 # Mint 🍃
-> Tiny generic event emitter / pubsub.
+> Tiny generic event emitter.
 
-- **Small and simple**: mint has 4 exported functions and 1 type
+- **Small and simple**: mint has 3 exported functions and 1 type
 - **Type safe**: built on generics
 - **Fast**: no reflection - no overhead
 - **Independant**: has no external dependencies

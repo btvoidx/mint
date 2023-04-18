@@ -43,24 +43,6 @@ func TestOn(t *testing.T) {
 	}
 }
 
-func TestOnFn(t *testing.T) {
-	e := new(mint.Emitter)
-
-	received := event{}
-	off := mint.OnFn(e, func(e event) {
-		received = e
-	})
-	defer off()
-
-	event := event{"hello", "world"}
-
-	mint.Emit(e, event)
-
-	if event != received {
-		t.Fatalf("wrong values: %#v != %#v", event, received)
-	}
-}
-
 func TestOff(t *testing.T) {
 	e := new(mint.Emitter)
 

@@ -91,21 +91,6 @@ func On[T any](e *Emitter) (ch <-chan T, off func()) {
 	}
 }
 
-// Registers a new consumer and sends all values to fn.
-// It is called with all emitted values which implement T.
-// So if T is any, ch will receive any emitted value.
-//
-// Calling off unsubscribes fn from receiving new values.
-func OnFn[T any](e *Emitter, fn func(v T)) (off func()) {
-	ch, off := On[T](e)
-	go func() {
-		for v := range ch {
-			fn(v)
-		}
-	}()
-	return off
-}
-
 // Use allows to hook into event emitting process.
 //
 // h must implement at least one of:
