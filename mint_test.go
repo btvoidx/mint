@@ -1,9 +1,7 @@
 package mint_test
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/btvoidx/mint"
 )
@@ -23,22 +21,13 @@ func (p *plugin) AfterEmit(v any)       { p.after(v) }
 func TestOn(t *testing.T) {
 	e := new(mint.Emitter)
 
-	ch, off := mint.On[event](e)
+	received := false
+	off := mint.On(e, func(e event) { received = true })
 	defer off()
 
-	event := event{"hello", "world"}
+	mint.Emit(e, event{"hello", "world"})
 
-	go mint.Emit(e, event)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-	defer cancel()
-
-	select {
-	case received := <-ch:
-		if event != received {
-			t.Fatalf("wrong values: %#v != %#v", event, received)
-		}
-	case <-ctx.Done():
+	if !received {
 		t.Fatalf("didn't receive")
 	}
 }
@@ -46,19 +35,16 @@ func TestOn(t *testing.T) {
 func TestOff(t *testing.T) {
 	e := new(mint.Emitter)
 
-	ch, off := mint.On[event](e)
-	event := event{"hello", "world"}
+	c := 0
+	off := mint.On(e, func(v int) { c = v })
 
-	go mint.Emit(e, event)
-	go mint.Emit(e, event)
-	go mint.Emit(e, event)
-	go mint.Emit(e, event)
-	go mint.Emit(e, event)
-
-	<-ch
+	mint.Emit(e, 1)
 	off()
+	mint.Emit(e, 2)
 
-	mint.Emit(e, event)
+	if c != 1 {
+		t.Fatalf("expected c to be %d; got %d", 1, c)
+	}
 }
 
 func TestUse(t *testing.T) {
@@ -74,11 +60,9 @@ func TestUse(t *testing.T) {
 		t.Fatalf("failed to register plugin: %v", err)
 	}
 
-	ch, off := mint.On[event](e)
-	defer off()
+	defer mint.On(e, func(int) {})
 
-	go mint.Emit(e, event{"hello", "world"})
-	<-ch
+	mint.Emit(e, event{"hello", "world"})
 
 	if !bef {
 		t.Fatalf("before fn didn't run")
@@ -100,18 +84,13 @@ func TestUseWithBlock(t *testing.T) {
 		t.Fatalf("failed to register plugin: %v", err)
 	}
 
-	ch, off := mint.On[event](e)
+	var recieved bool
+	off := mint.On(e, func(int) { recieved = true })
 	defer off()
 
-	go mint.Emit(e, event{"hello", "world"})
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-	defer cancel()
-
-	select {
-	case <-ch:
+	mint.Emit(e, 0)
+	if recieved {
 		t.Fatalf("received despite block")
-	case <-ctx.Done():
 	}
 }
 
@@ -131,12 +110,13 @@ func TestUseWithRewrite(t *testing.T) {
 		t.Fatalf("failed to register plugin: %v", err)
 	}
 
-	ch, off := mint.On[event](e)
+	var rec event
+	off := mint.On(e, func(v event) { rec = v })
 	defer off()
 
-	go mint.Emit(e, event{"hello", "world"})
-	event := <-ch
-	if event.F1 != "bye" || event.F2 != "space" {
+	mint.Emit(e, event{"hello", "world"})
+
+	if rec.F1 != "bye" || rec.F2 != "space" {
 		t.Fatalf("rewrite failed")
 	}
 }
