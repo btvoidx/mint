@@ -17,13 +17,14 @@ go get github.com/btvoidx/mint
 // Create an emitter
 e := new(mint.Emitter) // or &mint.Emmiter{}
 
-// Subscribe to MyEvent
-ch, off := mint.On[MyEvent](e)
-defer off() // don't forget to unsubsribe after!
-
-for event := range ch {
-	// do something with event!
+// Create a consumer
+func OnMyEvent(MyEvent) {
+	// do stuff with the value
 }
+
+// Subscribe
+off := mint.On(e, OnMyEvent)
+defer off() // don't forget to unsubsribe later!
 
 // ...
 
@@ -42,7 +43,7 @@ func (sb StringBlocker) BeforeEmit(v any) (block bool) {
 	return sb.Enabled && ok
 }
 
-// AfterEmit is called after all listener got the value
+// AfterEmit is called after all consumers got the value
 func (sb StringBlocker) AfterEmit(v any) {
 	if v, ok := v.(*string); sb.Enabled && ok {
 		panic("A pesky string got through the blocker!", v)
@@ -54,16 +55,61 @@ func (sb StringBlocker) AfterEmit(v any) {
 // Add to emitter like so
 mint.Use(e, StringBlocker{Enabled: true})
 
-// ...
-
-// Now receiving a value of type "string" is impossible,
+// Now receiving a value of string type is impossible,
 // as it will get blocked by StringBlocker
-ch, _ := mint.On[string](e)
-go mint.Emit(e, "a string value")
-<-ch // will not receive the event
+mint.Emit(e, "a string value")
 ```
 
-For additional examples see `mint_test.go`.
+By default consumers receive data concurrently, but this behaivor
+can be changed on per-emitter basis with `Emitter.SingleThread` field.
+```go
+	// This particular emitter will emit data
+	// sequentially on the same thread as mint.Emit call.
+	e := &mint.Emitter{SingleThread: true}
+
+	// or
+
+	e := new(mint.Emitter)
+	// The setting can be flipped whenever,
+	// in-flight single threaded emits will block
+	// subsequent concurrent emits and vise versa
+	e.SingleThread = true 
+```
+
+If you prefer channel-based consumers you can create a wrapper
+for `mint.Emit` so that it forwards all data to a channel. Be
+mindful of this example as it will not work in single thread mode.
+```go
+func MyOn[T any](e *mint.Emitter) (<-ch T, off func()) {
+	ch := make(chan T)
+	off := mint.On(e, func(v T) {
+		go func() { ch <- v }
+	})
+
+	return ch, func() {
+		off()
+		// drain channel so pending emits don't panic
+		for {
+			select {
+			case <-ch:
+			default:
+				close(ch)
+				return
+			}
+		}
+	}
+}
+
+// Use it like so
+ch, off := MyOn[MyEvent](e)
+defer off()
+
+for event := range ch {
+	// deal with incoming data
+}
+```
+
+For additional examples see [mint_test.go](mint_test.go).
 
 ### Reporting issues
 If you have questions or problems just open [a new issue](../../issues/new).
