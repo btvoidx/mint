@@ -1,3 +1,8 @@
+// Package mint provides a tiny generic event emitter.
+//
+//	e := new(mint.Emitter) // create an emitter
+//	mint.On(e, func(MyEvent)) // subscribe to MyEvent
+//	mint.Emit(e, MyEvent{ ... }) // emit values to consumers
 package mint
 
 import (
@@ -13,6 +18,9 @@ type Emitter struct {
 	// If true, all emits will run sequentially on the same thread
 	// Emit was called on. While single-thread emit is running,
 	// multi-threaded emits will block.
+	//
+	// Order in which consumers receive emits is still not determenistic,
+	// as `Emitter` uses a map to keep track of active consumers.
 	SingleThread bool
 
 	mu   sync.RWMutex
