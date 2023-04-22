@@ -63,17 +63,17 @@ mint.Emit(e, "a string value")
 By default consumers receive data concurrently, but this behaivor
 can be changed on per-emitter basis with `Emitter.SingleThread` field.
 ```go
-	// This particular emitter will emit data
-	// sequentially on the same thread as mint.Emit call.
-	e := &mint.Emitter{SingleThread: true}
+// This particular emitter will emit data
+// sequentially on the same thread as mint.Emit call.
+e := &mint.Emitter{SingleThread: true}
 
-	// or
+// or
 
-	e := new(mint.Emitter)
-	// The setting can be flipped whenever,
-	// in-flight single threaded emits will block
-	// subsequent concurrent emits and vise versa
-	e.SingleThread = true 
+e := new(mint.Emitter)
+// The setting can be flipped whenever,
+// in-flight single threaded emits will block
+// subsequent concurrent emits and vise versa
+e.SingleThread = true 
 ```
 
 If you prefer channel-based consumers you can create a wrapper
