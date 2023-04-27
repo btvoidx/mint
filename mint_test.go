@@ -101,7 +101,7 @@ func TestUse(t *testing.T) {
 	e := new(mint.Emitter)
 
 	var before, after bool
-	mint.Use(e, func(event) func() {
+	mint.Use(e, func(any) func() {
 		before = true
 		return func() { after = true }
 	})
