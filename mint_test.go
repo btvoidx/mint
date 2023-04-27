@@ -1,6 +1,8 @@
 package mint_test
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/btvoidx/mint"
@@ -10,15 +12,7 @@ type event struct {
 	F1, F2 string
 }
 
-type plugin struct {
-	before func(any) (block bool)
-	after  func(any)
-}
-
-func (p *plugin) BeforeEmit(v any) bool { return p.before(v) }
-func (p *plugin) AfterEmit(v any)       { p.after(v) }
-
-func TestOn(t *testing.T) {
+func TestEmitSimple(t *testing.T) {
 	e := new(mint.Emitter)
 
 	received := false
@@ -32,7 +26,48 @@ func TestOn(t *testing.T) {
 	}
 }
 
-func TestOff(t *testing.T) {
+func TestEmitRecursive(t *testing.T) {
+	e := new(mint.Emitter)
+
+	var i int
+	mint.On(e, func(event) {
+		if i < 5 {
+			i += 1
+			mint.Emit(e, event{})
+		}
+	})
+
+	mint.Emit(e, event{})
+
+	if i != 5 {
+		t.Fatalf("didn't receive")
+	}
+}
+
+func TestEmitConcurrent(t *testing.T) {
+	e := new(mint.Emitter)
+
+	var i atomic.Uint32
+	mint.On(e, func(event) {
+		i.Add(1)
+	})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			mint.Emit(e, event{})
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+	if i := i.Load(); i != 100 {
+		t.Fatalf("lost emits; got %d expected 100", i)
+	}
+}
+
+func TestOffSimple(t *testing.T) {
 	e := new(mint.Emitter)
 
 	c := 0
@@ -47,76 +82,33 @@ func TestOff(t *testing.T) {
 	}
 }
 
+func TestOffDuringEmit(t *testing.T) {
+	e := new(mint.Emitter)
+
+	c := 0
+	var off func()
+	off = mint.On(e, func(v int) { c = v; off() })
+
+	mint.Emit(e, 1)
+	mint.Emit(e, 2)
+
+	if c != 1 {
+		t.Fatalf("expected c to be %d; got %d", 1, c)
+	}
+}
+
 func TestUse(t *testing.T) {
 	e := new(mint.Emitter)
 
-	var bef, aft bool
-
-	err := mint.Use(e, &plugin{
-		before: func(any) (cancel bool) { bef = true; return false },
-		after:  func(any) { aft = true },
+	var before, after bool
+	mint.Use(e, func(event) func() {
+		before = true
+		return func() { after = true }
 	})
-	if err != nil {
-		t.Fatalf("failed to register plugin: %v", err)
-	}
 
-	defer mint.On(e, func(int) {})
+	mint.Emit(e, event{})
 
-	mint.Emit(e, event{"hello", "world"})
-
-	if !bef {
-		t.Fatalf("before fn didn't run")
-	}
-
-	if !aft {
-		t.Fatalf("after fn didn't run")
-	}
-}
-
-func TestUseWithBlock(t *testing.T) {
-	e := new(mint.Emitter)
-
-	err := mint.Use(e, &plugin{
-		before: func(any) bool { return true },
-		after:  func(any) {},
-	})
-	if err != nil {
-		t.Fatalf("failed to register plugin: %v", err)
-	}
-
-	var recieved bool
-	off := mint.On(e, func(int) { recieved = true })
-	defer off()
-
-	mint.Emit(e, 0)
-	if recieved {
-		t.Fatalf("received despite block")
-	}
-}
-
-func TestUseWithRewrite(t *testing.T) {
-	e := new(mint.Emitter)
-
-	err := mint.Use(e, &plugin{
-		before: func(v any) (block bool) {
-			if e, ok := v.(*event); ok {
-				*e = event{"bye", "space"}
-			}
-			return false
-		},
-		after: func(any) {},
-	})
-	if err != nil {
-		t.Fatalf("failed to register plugin: %v", err)
-	}
-
-	var rec event
-	off := mint.On(e, func(v event) { rec = v })
-	defer off()
-
-	mint.Emit(e, event{"hello", "world"})
-
-	if rec.F1 != "bye" || rec.F2 != "space" {
-		t.Fatalf("rewrite failed")
+	if !before || !after {
+		t.Fatalf("plugin was not called; before: %t, after: %t", before, after)
 	}
 }
