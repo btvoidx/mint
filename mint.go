@@ -6,21 +6,28 @@
 package mint
 
 import (
+	"reflect"
 	"sync"
 )
 
 // Emitter holds all active consumers and Emit hooks.
 type Emitter struct {
 	subc    uint64
-	subs    map[uint64]any // func(T)
 	plugins []func(any) func()
+	// map[fntype[T]()]map[uint64]func(T)
+	subs map[reflect.Type]map[uint64]any
 
 	mu   sync.Mutex
 	once sync.Once
 }
 
 func (e *Emitter) init() {
-	e.once.Do(func() { e.subs = make(map[uint64]any) })
+	e.once.Do(func() { e.subs = make(map[reflect.Type]map[uint64]any) })
+}
+
+func fntype[T any]() reflect.Type {
+	var t func(T)
+	return reflect.TypeOf(t)
 }
 
 // Sequentially pushes value v to all consumers of type T. Order in which consumers
@@ -33,13 +40,16 @@ func Emit[T any](e *Emitter, v T) {
 		}
 	}
 
+	subs, ok := e.subs[fntype[T]()]
+	if !ok {
+		return
+	}
+
 	// WARN a panic can happen here, and it did once
 	// but I haven't been able to reproduce it
 	// premise: call `off()` during concurrent Emit call
-	for _, fn := range e.subs {
-		if fn, ok := fn.(func(T)); ok {
-			fn(v)
-		}
+	for _, fn := range subs {
+		fn.(func(T))(v)
 	}
 }
 
@@ -51,18 +61,23 @@ func Emit[T any](e *Emitter, v T) {
 func On[T any](e *Emitter, fn func(T)) (off func()) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
 	e.init()
+
+	typ := fntype[T]()
+	if _, ok := e.subs[typ]; !ok {
+		e.subs[typ] = make(map[uint64]any)
+	}
+
 	id := e.subc
 	e.subc += 1
-	e.subs[id] = fn
+	e.subs[typ][id] = fn
 
 	var once sync.Once
 	return func() {
 		once.Do(func() {
 			e.mu.Lock()
 			defer e.mu.Unlock()
-			delete(e.subs, id)
+			delete(e.subs[typ], id)
 		})
 	}
 }
