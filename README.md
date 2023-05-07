@@ -3,7 +3,7 @@
 
 - **Very simple**: mint has 3 exported functions and 1 type
 - **Type safe**: built on generics
-- **Fast**: no reflection - no overhead
+- **Fast**: reflection kept to minimum
 - **Independant**: has no external dependencies
 
 ### Get
