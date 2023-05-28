@@ -33,8 +33,7 @@ mint.Emit(e, MyEvent{Msg: "Hello indeed", FromID: 2})
 ```
 
 If you prefer channel-based consumers you can create a wrapper
-for `mint.Emit` so that it forwards all data to a channel. Be
-mindful of this example as it will not work in single thread mode.
+for `mint.Emit` so that it forwards all data to a channel.
 ```go
 func MyOn[T any](e *mint.Emitter) (<-ch T, off func()) {
 	ch := make(chan T)
