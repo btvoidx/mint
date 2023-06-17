@@ -69,6 +69,13 @@ func TestEmitConcurrent(t *testing.T) {
 	}
 }
 
+func TestBroadReceiverMisfire(t *testing.T) {
+	e := new(mint.Emitter)
+
+	mint.On(e, func(any) { t.Error("misfired 'any' consumer with 'event' emit") })
+	mint.Emit(e, event{})
+}
+
 func TestOffSimple(t *testing.T) {
 	e := new(mint.Emitter)
 
