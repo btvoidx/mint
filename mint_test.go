@@ -1,11 +1,13 @@
 package mint_test
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/btvoidx/mint"
+	ctxmint "github.com/btvoidx/mint/context"
 )
 
 type event struct {
@@ -74,7 +76,7 @@ func TestOffSimple(t *testing.T) {
 	off := mint.On(e, func(v int) { c = v })
 
 	mint.Emit(e, 1)
-	off()
+	<-off() // wait for it to synchronize
 	mint.Emit(e, 2)
 
 	if c != 1 {
@@ -82,19 +84,16 @@ func TestOffSimple(t *testing.T) {
 	}
 }
 
-func TestOffDuringEmit(t *testing.T) {
+func TestContextCancel(t *testing.T) {
 	e := new(mint.Emitter)
 
-	c := 0
-	var off func()
-	off = mint.On(e, func(v int) { c = v; off() })
+	ctxmint.On(e, func(_ context.Context, v event) {
+		t.Errorf("consumer called despite context cancel")
+	})
 
-	mint.Emit(e, 1)
-	mint.Emit(e, 2)
-
-	if c != 1 {
-		t.Fatalf("expected c to be %d; got %d", 1, c)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ctxmint.Emit(e, ctx, event{})
 }
 
 func TestUse(t *testing.T) {

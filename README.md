@@ -3,7 +3,7 @@
 
 - **Very simple**: mint has 3 exported functions and 1 type
 - **Type safe**: built on generics
-- **Fast**: reflection kept to minimum
+- **Fast**: does not use reflection
 - **Independant**: has no external dependencies
 
 ### Get
@@ -32,8 +32,33 @@ mint.Emit(e, MyEvent{Msg: "Hi", FromID: 1})
 mint.Emit(e, MyEvent{Msg: "Hello indeed", FromID: 2})
 ```
 
+By importing the package as `"github.com/btvoidx/mint/context"` 
+you can access contextful api.
+```go
+import "github.com/btvoidx/mint/context"
+
+ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+defer cancel()
+
+// Not all consumers may receive the message due to timeout,
+// but Emit does wait for the active consumer to finish.
+err := mint.Emit(e, ctx, MyEvent{Msg: "A message"})
+
+// err is always ctx.Err()
+if err != ctx.Err() {	/* unreachable code */ }
+```
+
+Both versions can operate
+on the same `mint.Emitter` instance, as contextless api
+just wraps the contextful one with `context.Background()`.
+```go
+// MyEvent consumers will receive both events.
+mintctx.Emit(e, ctx, MyEvent{Msg: "A message"})
+mint.Emit(e, MyEvent{Msg: "A message"}) // uses context.Background()
+```
+
 If you prefer channel-based consumers you can create a wrapper
-for `mint.Emit` so that it forwards all data to a channel.
+for `mint.On` so that it forwards all data to a channel.
 ```go
 func MyOn[T any](e *mint.Emitter) (<-ch T, off func()) {
 	ch := make(chan T)
