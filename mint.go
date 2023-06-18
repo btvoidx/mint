@@ -1,149 +1,44 @@
+// Package mint provides a tiny generic event emitter.
+// Version under mint/context exposes context api.
+//
+//	e := new(mint.Emitter) // create an emitter
+//	mint.On(e, func(MyEvent)) // subscribe to MyEvent
+//	mint.Emit(e, MyEvent{ ... }) // emit values to consumers
 package mint
 
 import (
-	"errors"
-	"sync"
+	"context"
+
+	cm "github.com/btvoidx/mint/context"
 )
 
 // Emitter holds all active consumers and Emit hooks.
-//
-// Zero value is ready to use.
-type Emitter struct {
-	mu   sync.RWMutex
-	once sync.Once
-	kc   uint64
+type Emitter = cm.Emitter
 
-	subs   map[uint64]any
-	before []func(any) bool
-	after  []func(any)
-}
-
-func (e *Emitter) init() {
-	e.once.Do(func() {
-		e.subs = make(map[uint64]any)
-	})
-}
-
-// Pushes v to all consumers. They do not block each other, but block Emit.
-//
-// Sequentially calls BeforeEmit before pushing the value to consumers,
-// and AfterEmit after all consumers received the value.
+// Sequentially pushes value v to all consumers of type T.
+// Receive order is indetermenistic.
 func Emit[T any](e *Emitter, v T) {
-	e.mu.RLock()
-	for _, h := range e.before {
-		if h(&v) {
-			e.mu.RUnlock()
-			return
-		}
-	}
-
-	wg := new(sync.WaitGroup)
-	for _, ch := range e.subs {
-		if ch, ok := ch.(chan T); ok {
-			wg.Add(1)
-			go func() { ch <- v; wg.Done() }()
-		}
-	}
-	e.mu.RUnlock()
-
-	wg.Wait()
-
-	e.mu.RLock()
-	for _, h := range e.after {
-		h(&v)
-	}
-	e.mu.RUnlock()
+	cm.Emit(e, context.Background(), v)
 }
 
-// Registers a new consumer. ch receives all values which implement T.
-// So if T is any, ch will receive any emitted value.
+// Registers a new consumer that receives all values which were
+// emitted as T. So that On(e, func(any)) will
+// receive all values emitted with Emit[any](e, ...)
 //
-// Calling off closes ch. Calling off multiple times is a no-op.
-func On[T any](e *Emitter) (ch <-chan T, off func()) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	k := e.kc
-	chn := make(chan T)
-
-	e.init()
-	e.kc += 1
-	e.subs[k] = any(chn)
-
-	once := sync.Once{}
-	return chn, func() {
-		once.Do(func() {
-			e.mu.Lock()
-			defer e.mu.Unlock()
-			delete(e.subs, k)
-
-			// drain channel
-			// so pending emits don't panic
-			for {
-				select {
-				case <-chn:
-				default:
-					close(chn)
-					return
-				}
-			}
-		})
-	}
+// Call to off schedules consumer to stop once all concurrent Emits stop
+// and returns a <-chan which will get closed once it is done.
+// It is possible for consumer to receive values after a call to stop if
+// other concurrent emits are ongoing.
+func On[T any](e *Emitter, fn func(T)) (off func() <-chan struct{}) {
+	return cm.On(e, func(_ context.Context, v T) { fn(v) })
 }
 
-// Registers a new consumer and sends all values to fn.
-// It is called with all emitted values which implement T.
-// So if T is any, ch will receive any emitted value.
-//
-// Calling off unsubscribes fn from receiving new values.
-func OnFn[T any](e *Emitter, fn func(v T)) (off func()) {
-	ch, off := On[T](e)
-	go func() {
-		for v := range ch {
-			fn(v)
-		}
-	}()
-	return off
-}
-
-// Use allows to hook into event emitting process.
-//
-// h must implement at least one of:
-//
-//	interface{ BeforeEmit(v any) }
-//	interface{ BeforeEmit(v any) (block bool) }
-//	interface{ AfterEmit(v any) }
-//
-// If it does not or is nil, an error is returned.
-// Handler methods are called sequentially in order they were registered.
-//
-// BeforeEmit receives pointer to value, not value itself, so you can modify it before
-// it gets pushed to consumers.
-func Use(e *Emitter, h interface{}) error {
-	if h == nil {
-		return errors.New("h is nil")
-	}
-
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	e.init()
-
-	err := errors.New("h is not a valid interface; see doc comment")
-
-	if h, ok := h.(interface{ BeforeEmit(v any) }); ok {
-		wrap := func(v any) bool { h.BeforeEmit(v); return false }
-		e.before = append(e.before, wrap)
-		err = nil
-	}
-	if h, ok := h.(interface{ BeforeEmit(v any) bool }); ok {
-		e.before = append(e.before, h.BeforeEmit)
-		err = nil
-	}
-	if h, ok := h.(interface{ AfterEmit(v any) }); ok {
-		e.after = append(e.after, h.AfterEmit)
-		err = nil
-	}
-
-	return err
+// Use allows to hook into event emitting process. Plugns are
+// called sequentially in order they were added to Emitter.
+// Plugin is a function that takes Emitted values and
+// returns nil or a function that will be called after
+// all consumers got the Emitted value. Returned functions
+// are called in reverse order via `defer` statement.
+func Use(e *Emitter, plugin func(any) func()) {
+	cm.Use(e, func(_ context.Context, v any) func() { return plugin(v) })
 }

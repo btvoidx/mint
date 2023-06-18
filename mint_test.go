@@ -2,159 +2,119 @@ package mint_test
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/btvoidx/mint"
+	ctxmint "github.com/btvoidx/mint/context"
 )
 
 type event struct {
 	F1, F2 string
 }
 
-type plugin struct {
-	before func(any) (block bool)
-	after  func(any)
-}
-
-func (p *plugin) BeforeEmit(v any) bool { return p.before(v) }
-func (p *plugin) AfterEmit(v any)       { p.after(v) }
-
-func TestOn(t *testing.T) {
+func TestEmitSimple(t *testing.T) {
 	e := new(mint.Emitter)
 
-	ch, off := mint.On[event](e)
+	received := false
+	off := mint.On(e, func(e event) { received = true })
 	defer off()
 
-	event := event{"hello", "world"}
+	mint.Emit(e, event{"hello", "world"})
 
-	go mint.Emit(e, event)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-	defer cancel()
-
-	select {
-	case received := <-ch:
-		if event != received {
-			t.Fatalf("wrong values: %#v != %#v", event, received)
-		}
-	case <-ctx.Done():
+	if !received {
 		t.Fatalf("didn't receive")
 	}
 }
 
-func TestOnFn(t *testing.T) {
+func TestEmitRecursive(t *testing.T) {
 	e := new(mint.Emitter)
 
-	received := event{}
-	off := mint.OnFn(e, func(e event) {
-		received = e
+	var i int
+	mint.On(e, func(event) {
+		if i < 5 {
+			i += 1
+			mint.Emit(e, event{})
+		}
 	})
-	defer off()
 
-	event := event{"hello", "world"}
+	mint.Emit(e, event{})
 
-	mint.Emit(e, event)
-
-	if event != received {
-		t.Fatalf("wrong values: %#v != %#v", event, received)
+	if i != 5 {
+		t.Fatalf("didn't receive")
 	}
 }
 
-func TestOff(t *testing.T) {
+func TestEmitConcurrent(t *testing.T) {
 	e := new(mint.Emitter)
 
-	ch, off := mint.On[event](e)
-	event := event{"hello", "world"}
+	var i atomic.Uint32
+	mint.On(e, func(event) {
+		i.Add(1)
+	})
 
-	go mint.Emit(e, event)
-	go mint.Emit(e, event)
-	go mint.Emit(e, event)
-	go mint.Emit(e, event)
-	go mint.Emit(e, event)
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			mint.Emit(e, event{})
+			wg.Done()
+		}()
+	}
 
-	<-ch
-	off()
+	wg.Wait()
+	if i := i.Load(); i != 100 {
+		t.Fatalf("lost emits; got %d expected 100", i)
+	}
+}
 
-	mint.Emit(e, event)
+func TestBroadReceiverMisfire(t *testing.T) {
+	e := new(mint.Emitter)
+
+	mint.On(e, func(any) { t.Error("misfired 'any' consumer with 'event' emit") })
+	mint.Emit(e, event{})
+}
+
+func TestOffSimple(t *testing.T) {
+	e := new(mint.Emitter)
+
+	c := 0
+	off := mint.On(e, func(v int) { c = v })
+
+	mint.Emit(e, 1)
+	<-off() // wait for it to synchronize
+	mint.Emit(e, 2)
+
+	if c != 1 {
+		t.Fatalf("expected c to be %d; got %d", 1, c)
+	}
+}
+
+func TestContextCancel(t *testing.T) {
+	e := new(mint.Emitter)
+
+	ctxmint.On(e, func(_ context.Context, v event) {
+		t.Errorf("consumer called despite context cancel")
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ctxmint.Emit(e, ctx, event{})
 }
 
 func TestUse(t *testing.T) {
 	e := new(mint.Emitter)
 
-	var bef, aft bool
-
-	err := mint.Use(e, &plugin{
-		before: func(any) (cancel bool) { bef = true; return false },
-		after:  func(any) { aft = true },
+	var before, after bool
+	mint.Use(e, func(any) func() {
+		before = true
+		return func() { after = true }
 	})
-	if err != nil {
-		t.Fatalf("failed to register plugin: %v", err)
-	}
 
-	ch, off := mint.On[event](e)
-	defer off()
+	mint.Emit(e, event{})
 
-	go mint.Emit(e, event{"hello", "world"})
-	<-ch
-
-	if !bef {
-		t.Fatalf("before fn didn't run")
-	}
-
-	if !aft {
-		t.Fatalf("after fn didn't run")
-	}
-}
-
-func TestUseWithBlock(t *testing.T) {
-	e := new(mint.Emitter)
-
-	err := mint.Use(e, &plugin{
-		before: func(any) bool { return true },
-		after:  func(any) {},
-	})
-	if err != nil {
-		t.Fatalf("failed to register plugin: %v", err)
-	}
-
-	ch, off := mint.On[event](e)
-	defer off()
-
-	go mint.Emit(e, event{"hello", "world"})
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-	defer cancel()
-
-	select {
-	case <-ch:
-		t.Fatalf("received despite block")
-	case <-ctx.Done():
-	}
-}
-
-func TestUseWithRewrite(t *testing.T) {
-	e := new(mint.Emitter)
-
-	err := mint.Use(e, &plugin{
-		before: func(v any) (block bool) {
-			if e, ok := v.(*event); ok {
-				*e = event{"bye", "space"}
-			}
-			return false
-		},
-		after: func(any) {},
-	})
-	if err != nil {
-		t.Fatalf("failed to register plugin: %v", err)
-	}
-
-	ch, off := mint.On[event](e)
-	defer off()
-
-	go mint.Emit(e, event{"hello", "world"})
-	event := <-ch
-	if event.F1 != "bye" || event.F2 != "space" {
-		t.Fatalf("rewrite failed")
+	if !before || !after {
+		t.Fatalf("plugin was not called; before: %t, after: %t", before, after)
 	}
 }

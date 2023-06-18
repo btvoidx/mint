@@ -1,13 +1,12 @@
 # Mint 🍃
-> Tiny generic event emitter / pubsub.
+> Tiny generic event emitter.
 
-- **Small and simple**: mint has 4 exported functions and 1 type
+- **Very simple**: mint has 3 exported functions and 1 type
 - **Type safe**: built on generics
-- **Fast**: no reflection - no overhead
+- **Fast**: does not use reflection
 - **Independant**: has no external dependencies
-- **Extensible**: use `mint.Use` to hook into the process
 
-### Install
+### Get
 ```sh
 go get github.com/btvoidx/mint
 ```
@@ -17,13 +16,14 @@ go get github.com/btvoidx/mint
 // Create an emitter
 e := new(mint.Emitter) // or &mint.Emmiter{}
 
-// Subscribe to MyEvent
-ch, off := mint.On[MyEvent](e)
-defer off() // don't forget to unsubsribe after!
-
-for event := range ch {
-	// do something with event!
+// Create a consumer
+func OnMyEvent(MyEvent) {
+	// do stuff with the value
 }
+
+// Subscribe
+off := mint.On(e, OnMyEvent)
+defer off() // don't forget to unsubsribe later!
 
 // ...
 
@@ -32,38 +32,64 @@ mint.Emit(e, MyEvent{Msg: "Hi", FromID: 1})
 mint.Emit(e, MyEvent{Msg: "Hello indeed", FromID: 2})
 ```
 
-If you want more control, you can jam into emitting process like so:
+By importing the package as `"github.com/btvoidx/mint/context"` 
+you can access contextful api.
 ```go
-type StringBlocker struct{ Enabled bool }
+import "github.com/btvoidx/mint/context"
 
-// BeforeEmit is called before sending out emitted values
-func (sb StringBlocker) BeforeEmit(v any) (block bool) {
-	_, ok := v.(*string) // v is *T, so you can even change it
-	return sb.Enabled && ok
-}
+ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+defer cancel()
 
-// AfterEmit is called after all listener got the value
-func (sb StringBlocker) AfterEmit(v any) {
-	if v, ok := v.(*string); sb.Enabled && ok {
-		panic("A pesky string got through the blocker!", v)
+// Not all consumers may receive the message due to timeout,
+// but Emit does wait for the active consumer to finish.
+err := mint.Emit(e, ctx, MyEvent{Msg: "A message"})
+
+// err is always ctx.Err()
+if err != ctx.Err() {	/* unreachable code */ }
+```
+
+Both versions can operate
+on the same `mint.Emitter` instance, as contextless api
+just wraps the contextful one with `context.Background()`.
+```go
+// MyEvent consumers will receive both events.
+mintctx.Emit(e, ctx, MyEvent{Msg: "A message"})
+mint.Emit(e, MyEvent{Msg: "A message"}) // uses context.Background()
+```
+
+If you prefer channel-based consumers you can create a wrapper
+for `mint.On` so that it forwards all data to a channel.
+```go
+func MyOn[T any](e *mint.Emitter) (<-ch T, off func()) {
+	ch := make(chan T)
+	off := mint.On(e, func(v T) {
+		go func() { ch <- v }
+	})
+
+	return ch, func() {
+		off()
+		// drain channel so pending emits don't panic
+		for {
+			select {
+			case <-ch:
+			default:
+				close(ch)
+				return
+			}
+		}
 	}
 }
 
-// ...
+// Use it like so
+ch, off := MyOn[MyEvent](e)
+defer off()
 
-// Add to emitter like so
-mint.Use(e, StringBlocker{Enabled: true})
-
-// ...
-
-// Now receiving a value of type "string" is impossible,
-// as it will get blocked by StringBlocker
-ch, _ := mint.On[string](e)
-go mint.Emit(e, "a string value")
-<-ch // will not receive the event
+for event := range ch {
+	// deal with incoming data
+}
 ```
 
-For additional examples see `mint_test.go`.
+For additional examples see [mint_test.go](mint_test.go).
 
 ### Reporting issues
 If you have questions or problems just open [a new issue](../../issues/new).
