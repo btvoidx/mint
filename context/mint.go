@@ -28,9 +28,9 @@ func (e *Emitter) init() {
 	}
 }
 
-// Sequentially pushes value v to all consumers of type T.
+// Emit Sequentially pushes value v to all consumers of type T.
 // Receive order is indetermenistic. Cancelling ctx waits
-// for active consumer to return and stops emiting further.
+// for active consumer to return and stops emitting further.
 //
 // Using nil context will use context.Background() instead.
 // error is always ctx.Err()
@@ -68,7 +68,7 @@ func Emit[T any](e *Emitter, ctx context.Context, v T) error {
 	return ctx.Err()
 }
 
-// Registers a new consumer that receives all values which were
+// On Registers a new consumer that receives all values which were
 // emitted as T. So that On(e, func(context.Context, any)) will
 // receive all values emitted with Emit[any](e, ...)
 //
@@ -110,7 +110,7 @@ func On[T any](e *Emitter, fn func(context.Context, T)) (off func() <-chan struc
 	}
 }
 
-// Use allows to hook into event emitting process. Plugns are
+// Use allows to hook into event emitting process. Plugins are
 // called sequentially in order they were added to Emitter.
 // Plugin is a function that takes Emitted values and
 // returns nil or a function that will be called after
