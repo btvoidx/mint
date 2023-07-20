@@ -103,6 +103,13 @@ func TestContextCancel(t *testing.T) {
 	_ = ctxmint.Emit(e, ctx, event{})
 }
 
+func TestContextNoEmitter(t *testing.T) {
+	ctx := context.Background()
+	if err := ctxmint.Emit(nil, ctx, event{}); err != nil {
+		t.Errorf("expected error; got %v", err)
+	}
+}
+
 func TestUse(t *testing.T) {
 	e := new(mint.Emitter)
 
