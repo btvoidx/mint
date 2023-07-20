@@ -100,7 +100,10 @@ func TestContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_ = ctxmint.Emit(e, ctx, event{})
+	err := ctxmint.Emit(e, ctx, event{})
+	if err != context.Canceled {
+		t.Errorf("expected context.Canceled; got %v", err)
+	}
 }
 
 func TestContextNoEmitter(t *testing.T) {
