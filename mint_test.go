@@ -100,7 +100,7 @@ func TestContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	ctxmint.Emit(e, ctx, event{})
+	_ = ctxmint.Emit(e, ctx, event{})
 }
 
 func TestUse(t *testing.T) {

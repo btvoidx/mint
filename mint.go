@@ -18,7 +18,8 @@ type Emitter = cm.Emitter
 // Emit Sequentially pushes value v to all consumers of type T.
 // Receive order is indetermenistic.
 func Emit[T any](e *Emitter, v T) {
-	cm.Emit(e, context.Background(), v)
+	// todo: decide how to handle context.Err()
+	_ = cm.Emit(e, context.Background(), v)
 }
 
 // On Registers a new consumer that receives all values which were
