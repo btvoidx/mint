@@ -49,7 +49,7 @@ func Emit[T any](e *Emitter, ctx context.Context, v T) error {
 	for _, fn := range e.plugins {
 		after := fn(ctx, v)
 		if after != nil {
-			func() { defer after() }()
+			defer after()
 		}
 	}
 
