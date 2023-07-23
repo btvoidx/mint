@@ -15,13 +15,13 @@ import (
 // Emitter holds all active consumers and Emit hooks.
 type Emitter = cm.Emitter
 
-// Sequentially pushes value v to all consumers of type T.
+// Emit Sequentially pushes value v to all consumers of type T.
 // Receive order is indetermenistic.
 func Emit[T any](e *Emitter, v T) {
-	cm.Emit(e, context.Background(), v)
+	_ = cm.Emit(e, context.Background(), v)
 }
 
-// Registers a new consumer that receives all values which were
+// On Registers a new consumer that receives all values which were
 // emitted as T. So that On(e, func(any)) will
 // receive all values emitted with Emit[any](e, ...)
 //
@@ -33,7 +33,7 @@ func On[T any](e *Emitter, fn func(T)) (off func() <-chan struct{}) {
 	return cm.On(e, func(_ context.Context, v T) { fn(v) })
 }
 
-// Use allows to hook into event emitting process. Plugns are
+// Use allows to hook into event emitting process. Plugins are
 // called sequentially in order they were added to Emitter.
 // Plugin is a function that takes Emitted values and
 // returns nil or a function that will be called after

@@ -100,21 +100,33 @@ func TestContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	ctxmint.Emit(e, ctx, event{})
+	err := ctxmint.Emit(e, ctx, event{})
+	if err != context.Canceled {
+		t.Errorf("expected context.Canceled; got %v", err)
+	}
+}
+
+func TestContextNoEmitter(t *testing.T) {
+	ctx := context.Background()
+	if err := ctxmint.Emit(nil, ctx, event{}); err != nil {
+		t.Errorf("expected error; got %v", err)
+	}
 }
 
 func TestUse(t *testing.T) {
 	e := new(mint.Emitter)
 
-	var before, after bool
+	s := make([]int, 0, 3)
 	mint.Use(e, func(any) func() {
-		before = true
-		return func() { after = true }
+		s = append(s, 1)
+		return func() { s = append(s, 3) }
 	})
+
+	mint.On(e, func(e event) { s = append(s, 2) })
 
 	mint.Emit(e, event{})
 
-	if !before || !after {
-		t.Fatalf("plugin was not called; before: %t, after: %t", before, after)
+	if len(s) != 3 || s[0] != 1 || s[1] != 2 || s[2] != 3 {
+		t.Fatalf("plugin was called in incorrect order: expected %v, got %v", []int{1, 2, 3}, s)
 	}
 }
