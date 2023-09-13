@@ -100,7 +100,7 @@ func On[T any](e *Emitter, fn func(context.Context, T)) (off func() <-chan struc
 			defer e.mu.Unlock()
 
 			delete(e.subs[key[T]{}], id)
-			if len(e.subs[key[T]{}]) == 1 {
+			if len(e.subs[key[T]{}]) == 0 {
 				delete(e.subs, key[T]{})
 			}
 
