@@ -93,3 +93,6 @@ For additional examples see [mint_test.go](mint_test.go).
 
 ### Reporting issues
 If you have questions or problems just open [a new issue](../../issues/new).
+
+### Contributing
+This project uses lowercase commit messages. Pull requests containing commits starting with capital letters must be rebased to change commit messages.
